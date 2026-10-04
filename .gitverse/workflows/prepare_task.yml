@@ -1,0 +1,128 @@
+name: Prepare merge-conflict task
+
+on:
+  create:
+    branches:
+      - "student/**"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitVerse Task Bot"
+          git config user.email "task-bot@example.com"
+
+      - name: Detect variant
+        run: |
+          STUDENT_BRANCH="${{ gitverse.ref_name }}"
+
+          HASH=$(printf "%s" "$STUDENT_BRANCH" | cksum | awk '{print $1}')
+          VARIANT=$((HASH % 15 + 1))
+          VARIANT_PADDED=$(printf "%02d" "$VARIANT")
+
+          echo "STUDENT_BRANCH=$STUDENT_BRANCH" >> $GITHUB_ENV
+          echo "VARIANT=$VARIANT" >> $GITHUB_ENV
+          echo "VARIANT_PADDED=$VARIANT_PADDED" >> $GITHUB_ENV
+
+          echo "BRANCH_A=feature/v${VARIANT_PADDED}-a" >> $GITHUB_ENV
+          echo "BRANCH_B=feature/v${VARIANT_PADDED}-b" >> $GITHUB_ENV
+
+          echo "Student: $STUDENT_BRANCH"
+          echo "Variant: $VARIANT"
+
+      - name: Fetch repository
+        run: |
+          git fetch origin
+
+      - name: Prepare student data
+        run: |
+          git checkout "$STUDENT_BRANCH"
+
+          python src/quest_variant.py \
+            --variant "$VARIANT" \
+            --target data
+
+          git add data/benchmark.csv
+
+          if ! git diff --cached --quiet; then
+            git commit \
+              -m "chore: prepare benchmark data for variant ${VARIANT}"
+
+            git push origin "$STUDENT_BRANCH"
+          fi
+
+      - name: Create branch A
+        run: |
+          if git ls-remote \
+            --exit-code \
+            --heads \
+            origin \
+            "$BRANCH_A" \
+            > /dev/null 2>&1
+          then
+            echo "$BRANCH_A already exists"
+          else
+            git checkout master
+            git pull origin master
+
+            git checkout \
+              -b "$BRANCH_A"
+
+            python src/quest_variant.py \
+              --variant "$VARIANT" \
+              --target branch_a
+
+            git add src/benchmark.py
+
+            git commit \
+              -m "feat: variant ${VARIANT} change A"
+
+            git push \
+              -u origin \
+              "$BRANCH_A"
+          fi
+
+      - name: Create branch B
+        run: |
+          if git ls-remote \
+            --exit-code \
+            --heads \
+            origin \
+            "$BRANCH_B" \
+            > /dev/null 2>&1
+          then
+            echo "$BRANCH_B already exists"
+          else
+            git checkout master
+            git pull origin master
+
+            git checkout \
+              -b "$BRANCH_B"
+
+            python src/quest_variant.py \
+              --variant "$VARIANT" \
+              --target branch_b \
+              --requirements-output requirements.txt
+
+            git add \
+              src/benchmark.py \
+              requirements.txt
+
+            git commit \
+              -m "feat: variant ${VARIANT} change B"
+
+            git push \
+              -u origin \
+              "$BRANCH_B"
+          fi
