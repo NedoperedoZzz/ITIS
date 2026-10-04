@@ -1,0 +1,35 @@
+name: Check student solution
+on:
+  workflow_dispatch: null
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect variant
+        run: |
+          STUDENT_BRANCH="${{ gitverse.ref_name }}"
+
+          HASH=$(printf "%s" "$STUDENT_BRANCH" | cksum | awk '{print $1}')
+          VARIANT=$((HASH % 15 + 1))
+
+          echo "QUEST_VARIANT=$VARIANT" >> $GITHUB_ENV
+
+          echo "Student: $STUDENT_BRANCH"
+          echo "Variant: $VARIANT"
+      - name: Fetch master history
+        run: |
+          git fetch origin master
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      - name: Check solution
+        run: |
+          python src/check_solution.py
